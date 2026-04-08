@@ -33,6 +33,9 @@ services:
       - "8001"
     environment:
       DATABASE_URL: postgresql+asyncpg://shield:shield@db/shield
+      POLICY_DIR: /app/policies
+    volumes:
+      - ./policies:/app/policies:ro
     depends_on:
       db:
         condition: service_healthy
