@@ -1,7 +1,7 @@
 """POST /v1/pre-generate — policy-gated generation pre-check.
 
 Calls the policy service, logs the transaction, then:
-  approve  → 200 with a short-lived session_token JWT
+  approve  → verify asset_ids in registry, then 200 with a short-lived session_token JWT
   reject   → 403 with the policy reason
   escalate → 202 with the policy reason (generation should pause)
 """
@@ -21,6 +21,7 @@ from .jwt_utils import encode as jwt_encode
 from .models import Decision, IdentityClaims, Transaction
 
 POLICY_SERVICE_URL = os.getenv("POLICY_SERVICE_URL", "http://policy:8001")
+REGISTRY_SERVICE_URL = os.getenv("REGISTRY_SERVICE_URL", "http://registry:8002")
 SECRET_KEY = os.getenv("SHIELD_JWT_SECRET", "dev-secret")
 SESSION_TOKEN_EXPIRE_SECONDS = 300
 
@@ -41,6 +42,25 @@ async def _call_policy_service(payload: dict) -> dict:
         resp = await http.post(f"{POLICY_SERVICE_URL}/evaluate", json=payload)
         resp.raise_for_status()
         return resp.json()
+
+
+async def _verify_assets_in_registry(asset_ids: list[str], rights_holder_id: str) -> None:
+    """Confirm all asset_ids exist in the registry and belong to rights_holder_id.
+
+    Raises HTTP 400 if any asset is unknown or mismatched.
+    """
+    async with httpx.AsyncClient() as http:
+        resp = await http.post(
+            f"{REGISTRY_SERVICE_URL}/assets/verify",
+            json={"asset_ids": asset_ids, "rights_holder_id": rights_holder_id},
+        )
+    if resp.status_code != 200:
+        detail = "Unknown asset IDs or rights_holder mismatch"
+        try:
+            detail = resp.json().get("detail", detail)
+        except Exception:
+            pass
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
 
 
 @router.post("/pre-generate")
@@ -85,6 +105,9 @@ async def pre_generate(
     await db.commit()
 
     if decision == "approve":
+        # Verify all requested assets exist in the registry before issuing the token
+        await _verify_assets_in_registry(body.asset_ids, body.rights_holder_id)
+
         session_token = jwt_encode(
             {
                 "request_id": request_id,

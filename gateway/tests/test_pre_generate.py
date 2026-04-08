@@ -1,8 +1,9 @@
 """Tests for POST /v1/pre-generate covering all three policy decision paths.
 
 The policy service HTTP call is mocked via unittest.mock so these tests run
-without a live policy service.  Auth uses the same test credentials seeded in
-conftest.py (client_id=test-tool, client_secret=test-secret).
+without a live policy service.  The registry asset-verification call is also
+mocked so tests do not require a live registry.  Auth uses the same test
+credentials seeded in conftest.py (client_id=test-tool, client_secret=test-secret).
 """
 
 import pytest
@@ -56,6 +57,10 @@ async def test_pre_generate_fan_use_returns_session_token(client: AsyncClient):
         "app.pre_generate._call_policy_service",
         new_callable=AsyncMock,
         return_value=_policy_resp("approve", "use_type", "Use type 'fan' maps to 'approve'"),
+    ), patch(
+        "app.pre_generate._verify_assets_in_registry",
+        new_callable=AsyncMock,
+        return_value=None,
     ):
         resp = await client.post(
             "/v1/pre-generate",
