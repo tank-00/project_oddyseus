@@ -1,0 +1,19 @@
+from fastapi import FastAPI, Depends
+
+from .auth import require_auth, router as auth_router
+from .models import IdentityClaims
+
+app = FastAPI(title="Shield Gateway", version="0.1.0")
+
+app.include_router(auth_router)
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "gateway"}
+
+
+@app.get("/protected", response_model=IdentityClaims)
+async def protected_route(claims: IdentityClaims = Depends(require_auth)):
+    """Example protected route — returns the caller's identity claims."""
+    return claims
