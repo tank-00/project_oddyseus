@@ -13,11 +13,9 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
-# Derive the sync (psycopg2) URL from the single DATABASE_URL the app uses.
-# Alembic requires a synchronous driver; strip +asyncpg to get one without
-# duplicating the connection string into a second env var.
-_raw_url = os.getenv("DATABASE_URL") or config.get_main_option("sqlalchemy.url")
-alembic_url = _raw_url.replace("postgresql+asyncpg://", "postgresql://")
+# Use the single DATABASE_URL throughout — same connection string for both
+# Alembic migrations and the application (psycopg2 synchronous driver).
+alembic_url = os.getenv("DATABASE_URL") or config.get_main_option("sqlalchemy.url")
 config.set_main_option("sqlalchemy.url", alembic_url)
 
 # All registry DDL and the alembic_version table live in the 'registry' schema,

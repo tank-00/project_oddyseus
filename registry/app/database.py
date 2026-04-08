@@ -1,8 +1,8 @@
 import os
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy import create_engine
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./registry_test.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./registry_test.db")
 
 # For PostgreSQL, scope every connection to the 'registry' schema so that
 # registry tables (assets, asset_acl, used_tokens, alembic_version) are
@@ -10,16 +10,16 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./registry_test.db
 # SQLite (used in tests) has no schema concept and ignores connect_args.
 _connect_args: dict = {}
 if DATABASE_URL.startswith("postgresql"):
-    _connect_args = {"server_settings": {"search_path": "registry"}}
+    _connect_args = {"options": "-c search_path=registry"}
 
-engine = create_async_engine(DATABASE_URL, connect_args=_connect_args, echo=False)
-AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+engine = create_engine(DATABASE_URL, connect_args=_connect_args, echo=False)
+SessionLocal = sessionmaker(engine, expire_on_commit=False)
 
 
 class Base(DeclarativeBase):
     pass
 
 
-async def get_db():
-    async with AsyncSessionLocal() as session:
+def get_db():
+    with SessionLocal() as session:
         yield session
