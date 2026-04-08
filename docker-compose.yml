@@ -47,7 +47,6 @@ services:
       - "8002"
     environment:
       DATABASE_URL: postgresql+asyncpg://shield:shield@db/shield
-      ALEMBIC_DATABASE_URL: postgresql://shield:shield@db/shield
       SHIELD_JWT_SECRET: dev-secret-change-in-production
       STORAGE_BACKEND: local
       LOCAL_STORAGE_DIR: /app/storage
