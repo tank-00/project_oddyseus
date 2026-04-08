@@ -7,15 +7,17 @@ POST /assets/access   — validate session_token JWT, return presigned download 
 POST /assets/verify   — internal; confirm asset_ids belong to a rights_holder
 GET  /assets/download/{token_id} — serve file for local-storage presigned URLs
 """
+import logging
 import os
 import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Response, UploadFile, status
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, text
+from sqlalchemy.orm import Session
 
-from .database import get_db
+from .database import engine, get_db
 from .jwt_utils import ExpiredSignatureError, InvalidTokenError
 from .jwt_utils import decode as jwt_decode
 from .models import (
@@ -31,7 +33,21 @@ from .store import AssetStore, get_store
 SECRET_KEY = os.getenv("SHIELD_JWT_SECRET", "dev-secret")
 PRESIGN_EXPIRY_SECONDS = 60
 
-app = FastAPI(title="Shield Registry", version="0.1.0")
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1 FROM assets LIMIT 1"))
+        logger.info("assets table ready")
+    except Exception as exc:
+        logger.error("assets table check failed: %s", exc)
+    yield
+
+
+app = FastAPI(title="Shield Registry", version="0.1.0", lifespan=lifespan)
 
 
 @app.get("/health")
@@ -48,7 +64,7 @@ async def health():
 async def upload_asset(
     file: UploadFile,
     rights_holder_id: str = Form(...),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
     store: AssetStore = Depends(get_store),
 ):
     """Store a file and create an assets record. Returns asset_id."""
@@ -66,7 +82,7 @@ async def upload_asset(
         size_bytes=len(file_bytes),
     )
     db.add(asset)
-    await db.commit()
+    db.commit()
 
     return AssetUploadResponse(asset_id=asset_id_str)
 
@@ -77,9 +93,9 @@ async def upload_asset(
 
 
 @app.post("/assets/access", response_model=AssetAccessResponse)
-async def access_assets(
+def access_assets(
     body: AssetAccessRequest,
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
     store: AssetStore = Depends(get_store),
 ):
     """Validate a session_token JWT and return one presigned URL per asset."""
@@ -117,10 +133,9 @@ async def access_assets(
                 detail=f"Invalid asset_id format: {asset_id_str}",
             )
 
-        result = await db.execute(
+        asset = db.execute(
             select(Asset).where(Asset.id == asset_uuid, Asset.is_active == True)  # noqa: E712
-        )
-        asset = result.scalar_one_or_none()
+        ).scalar_one_or_none()
         if not asset:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -137,7 +152,7 @@ async def access_assets(
         db.add(used_token)
         urls[asset_id_str] = store.make_download_url(asset_id_str, str(token_id))
 
-    await db.commit()
+    db.commit()
     return AssetAccessResponse(urls=urls)
 
 
@@ -147,9 +162,9 @@ async def access_assets(
 
 
 @app.post("/assets/verify")
-async def verify_assets(
+def verify_assets(
     body: AssetVerifyRequest,
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Confirm every asset_id exists, is active, and belongs to rights_holder_id."""
     invalid_ids: list[str] = []
@@ -161,14 +176,14 @@ async def verify_assets(
             invalid_ids.append(asset_id_str)
             continue
 
-        result = await db.execute(
+        row = db.execute(
             select(Asset).where(
                 Asset.id == asset_uuid,
                 Asset.is_active == True,  # noqa: E712
                 Asset.rights_holder_id == body.rights_holder_id,
             )
-        )
-        if result.scalar_one_or_none() is None:
+        ).scalar_one_or_none()
+        if row is None:
             invalid_ids.append(asset_id_str)
 
     if invalid_ids:
@@ -188,7 +203,7 @@ async def verify_assets(
 @app.get("/assets/download/{token_id}")
 async def download_asset(
     token_id: str,
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
     store: AssetStore = Depends(get_store),
 ):
     """Redeem a single-use download token and stream the file."""
@@ -197,8 +212,7 @@ async def download_asset(
     except ValueError:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token format")
 
-    result = await db.execute(select(UsedToken).where(UsedToken.id == token_uuid))
-    token = result.scalar_one_or_none()
+    token = db.execute(select(UsedToken).where(UsedToken.id == token_uuid)).scalar_one_or_none()
 
     if token is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Token not found")
@@ -218,11 +232,10 @@ async def download_asset(
     # Mark redeemed before serving (prevents race-condition double-use)
     token.redeemed = True
     token.redeemed_at = now
-    await db.commit()
+    db.commit()
 
     # Fetch asset metadata for Content-Type
-    asset_result = await db.execute(select(Asset).where(Asset.id == token.asset_id))
-    asset = asset_result.scalar_one_or_none()
+    asset = db.execute(select(Asset).where(Asset.id == token.asset_id)).scalar_one_or_none()
     content_type = asset.content_type if asset else "application/octet-stream"
     filename = asset.filename if asset else "download"
 
