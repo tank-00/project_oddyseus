@@ -65,6 +65,7 @@ async def test_pre_generate_fan_use_returns_session_token(client: AsyncClient):
 
     assert resp.status_code == 200
     body = resp.json()
+    assert body["decision"] == "approve"
     assert "session_token" in body
     assert "reason" in body
     assert "request_id" in body
@@ -117,9 +118,8 @@ async def test_pre_generate_commercial_use_returns_202(client: AsyncClient):
 
     assert resp.status_code == 202
     body = resp.json()
-    assert "reason" in body
-    assert "commercial" in body["reason"]
-    assert "request_id" in body
+    assert "detail" in body
+    assert "commercial" in body["detail"]
 
 
 # ---------------------------------------------------------------------------
