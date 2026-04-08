@@ -1,0 +1,20 @@
+rights_holder_id: test-rights-holder
+
+# Rules evaluate top-down; first matching rule wins.
+# If no rule matches, the default decision is escalate.
+rules:
+  - type: content_category
+    blocked_categories:
+      - violence
+      - sexual
+      - political
+
+  - type: use_type
+    mappings:
+      fan: approve
+      commercial: escalate
+      advertising: reject
+      editorial: approve
+
+  - type: requester_identity
+    mode: open
