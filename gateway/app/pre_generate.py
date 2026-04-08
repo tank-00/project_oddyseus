@@ -12,7 +12,6 @@ import uuid
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -96,6 +95,7 @@ async def pre_generate(
             algorithm="HS256",
         )
         return {
+            "decision": "approve",
             "session_token": session_token,
             "reason": reason,
             "request_id": request_id,
@@ -105,7 +105,4 @@ async def pre_generate(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=reason)
 
     # escalate
-    return JSONResponse(
-        status_code=status.HTTP_202_ACCEPTED,
-        content={"reason": reason, "request_id": request_id},
-    )
+    raise HTTPException(status_code=status.HTTP_202_ACCEPTED, detail=reason)
