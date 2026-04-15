@@ -60,3 +60,14 @@ async def client(db_engine, db_session):
         yield ac
 
     app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture(scope="session")
+async def auth_token(client):
+    """Return a valid Bearer token for the seeded test-tool client."""
+    resp = await client.post(
+        "/auth/token",
+        data={"client_id": "test-tool", "client_secret": "test-secret", "end_user_id": "test-user"},
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()["access_token"]

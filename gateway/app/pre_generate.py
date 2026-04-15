@@ -93,6 +93,7 @@ async def pre_generate(
     txn = Transaction(
         client_id=claims.client_id,
         end_user_id=claims.end_user_id,
+        rights_holder_id=body.rights_holder_id,
         request_id=uuid.UUID(request_id),
         decision=Decision(decision),
         metadata_={

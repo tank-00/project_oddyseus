@@ -35,6 +35,7 @@ class Transaction(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     client_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     end_user_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    rights_holder_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     request_id: Mapped[uuid.UUID] = mapped_column(Uuid, default=uuid.uuid4, unique=True)
     decision: Mapped[Decision] = mapped_column(Enum(Decision, name="decision_enum"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -42,6 +43,10 @@ class Transaction(Base):
         default=lambda: datetime.now(timezone.utc),
     )
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSON, nullable=True)
+    # Post-generation watermark fields (populated by POST /v1/post-generate)
+    watermarked: Mapped[bool] = mapped_column(default=False, nullable=False)
+    output_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 # ---------------------------------------------------------------------------
